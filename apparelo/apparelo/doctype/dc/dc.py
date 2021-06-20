@@ -7,6 +7,7 @@ import frappe
 import json
 import math
 from frappe import _, msgprint
+from frappe.model.mapper import get_mapped_doc
 from six import string_types, iteritems
 from frappe.model.document import Document
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -18,6 +19,7 @@ from erpnext.manufacturing.doctype.production_plan.production_plan import get_it
 from erpnext.stock.doctype.item.item import get_uom_conv_factor
 from apparelo.apparelo.utils.utils import generate_printable_list, generate_html_from_list, generate_total_row_and_column, generate_empty_column_list
 from apparelo.apparelo.utils.item_utils import get_item_attribute_set
+import itertools
 
 
 class DC(Document):
@@ -26,9 +28,13 @@ class DC(Document):
 		self.items = list(filter(lambda x: x.quantity != 0, self.items))
 		self.return_materials = list(filter(lambda x: x.qty != 0, self.return_materials))
 
+		if not self.items:
+			frappe.throw(_(f'Please enter delivery quantity for delivery items'))
+		if not self.return_materials:
+			frappe.throw(_(f'Please enter expected quantity for return materials'))
 		# printable table creation
 		items = [item for item in self.items if vars(item)['deliver_later']==0]
-		printable_list_d = generate_printable_list(items, get_grouping_params(self.process_1), field='quantity')
+		printable_list_d = generate_printable_list(items, get_grouping_params(self.process_1), self.lot, field='quantity')
 		generate_total_row_and_column(printable_list_d)
 		printable_list_d[0]['section_title'] = 'Delivery Items'
 		deliver_later_items = [item for item in self.items if vars(item)['deliver_later']!=0]
@@ -41,32 +47,19 @@ class DC(Document):
 				else:
 					location_wise_items[vars(items)['delivery_location']].append(items)
 			for location in location_wise_items.keys():
-				printable_list = generate_printable_list(location_wise_items[location], get_grouping_params(self.process_1), field='quantity')
+				printable_list = generate_printable_list(location_wise_items[location], get_grouping_params(self.process_1), self.lot, field='quantity')
 				generate_total_row_and_column(printable_list)
 				generate_empty_column_list(printable_list)
 				printable_list[0]['section_title'] = location
 				printable_list_l+=printable_list
-		printable_list_r = generate_printable_list(self.return_materials, get_grouping_params(self.process_1), field='qty')
+		printable_list_r = generate_printable_list(self.return_materials, get_grouping_params(self.process_1), self.lot, field='qty')
 		generate_total_row_and_column(printable_list_r)
 		printable_list_r[0]['section_title'] = 'Expected Return Items'
 		self.dc_cloth_quantity = generate_html_from_list(printable_list_d+printable_list_l+printable_list_r)
 
 	def on_submit(self):
 		new_po = self.create_purchase_order()
-		rm_items = []
-		for item in new_po.supplied_items:
-			item_list = {}
-			item_list['name'] = item.name
-			item_list['item_code'] = item.main_item_code
-			item_list['rm_item_code'] = item.rm_item_code
-			item_list['item_name'] = item.rm_item_code
-			item_list['qty'] = item.required_qty
-			item_list['warehouse'] = item.reserve_warehouse
-			item_list['rate'] = item.rate
-			item_list['amount'] = item.amount
-			item_list['stock_uom'] = item.stock_uom
-			rm_items.append(item_list)
-		stock_dict = make_rm_stock_entry(new_po.name, json.dumps(rm_items))
+		stock_dict = get_stock_dict(new_po)
 		stock_entry = frappe.get_doc(stock_dict)
 		stock_entry.dc = self.name
 		stock_entry.save()
@@ -119,17 +112,50 @@ class DC(Document):
 			else:
 				item.reserve_warehouse = lot_warehouse
 		po.save()
+		stock_dict = get_stock_dict(po)
+		supplied_items = {}
+		for item in stock_dict['items']:
+			if not item['item_name'] in supplied_items:
+				supplied_items[item['item_name']] = item['transfer_qty']
+			else:
+				supplied_items[item['item_name']] += item['transfer_qty']
+		qty_wise_dc_item = self.get_dc_item()
+		for dc_item in qty_wise_dc_item:
+			item_name = dc_item['item']
+			idx = dc_item['idx']
+			qty = dc_item['qty']
+			if not item_name in supplied_items:
+				frappe.throw(_(f'Item {item_name} entered in delivery items at row {idx} was not found in purchase order supplied items'))
+			else:
+				transfer_qty = round(supplied_items[item_name],3)
+				if not round((transfer_qty - flt(qty)),3) <= 0.001:
+					frappe.throw(_(f'Item {item_name} of qty {flt(qty)} entered in delivery items at row {idx} was mismatched with PO supplied items of qty {transfer_qty}'))
+			supplied_items.pop(item_name)
+		if supplied_items:
+			unmatched_supplied_items = ','.join(supplied_items.keys())
+			frappe.throw(_(f'Purchase order supplied items {unmatched_supplied_items} was not found in delivery items entered'))
 		po.submit()
 		return po
 
 	def validate_delivery(self):
+		is_negative_stock_allowed = frappe.db.get_single_value("Stock Settings","allow_negative_stock")
 		for item in self.items:
-			if item.quantity > item.available_quantity:
+			if item.quantity > item.available_quantity and not is_negative_stock_allowed:
 				frappe.throw(_(f'Cannot deliver more than we have for {item.item_code}'))
 
 			if item.deliver_later and not item.delivery_location:
 				frappe.throw(_(f'Mention <b> Delivery Location </b> to deliver later for {item.pf_item_code}'))
 	
+	def get_dc_item(self):
+		dc_item_list = []
+		for item in self.items:
+			dc_item = {}
+			dc_item['item'] = item.item_code
+			dc_item['idx'] = item.idx
+			dc_item['qty'] = item.quantity
+			dc_item_list.append(dc_item)
+		return dc_item_list
+
 	def get_supplied_items_reserve_warehouse(self):
 		item_reserve_warehouse_location = {}
 		for item in self.items:
@@ -139,6 +165,23 @@ class DC(Document):
 				item_reserve_warehouse_location[item.item_code] = reserver_warehouse
 		
 		return item_reserve_warehouse_location
+
+def get_stock_dict(new_po):
+	rm_items = []
+	for item in new_po.supplied_items:
+		item_list = {}
+		item_list['name'] = item.name
+		item_list['item_code'] = item.main_item_code
+		item_list['rm_item_code'] = item.rm_item_code
+		item_list['item_name'] = item.rm_item_code
+		item_list['qty'] = item.required_qty
+		item_list['warehouse'] = item.reserve_warehouse
+		item_list['rate'] = item.rate
+		item_list['amount'] = item.amount
+		item_list['stock_uom'] = item.stock_uom
+		rm_items.append(item_list)
+	stock_dict = make_rm_stock_entry(new_po.name, json.dumps(rm_items))
+	return stock_dict
 
 def get_grouping_params(process):
 	gp_list = {
@@ -282,14 +325,12 @@ def get_supplier_based_address(supplier):
 	else:
 		return ''
 
+@frappe.whitelist()
 def get_supplier(doctype, txt, searchfield, start, page_len, filters):
+	supplier_list = frappe.get_all('Supplier_Process', {'processes': filters['supplier_process.processes']}, 'parent')
 	suppliers = []
-	all_supplier = frappe.db.get_all("Supplier")
-	for supplier in all_supplier:
-		process_supplier = frappe.get_doc("Supplier", supplier.name)
-		for process in process_supplier.supplier_process:
-			if process.processes == filters['supplier_process.processes']:
-				suppliers.append([supplier.name])
+	for supplier in supplier_list:
+		suppliers.append([supplier['parent']])
 	return suppliers
 
 def make_item_fields(update=True):
@@ -423,6 +464,16 @@ def get_expected_items_in_return(doc, items_to_be_sent=None, use_delivery_qty=Fa
 	receivable_list = get_receivable_list_values(
 		lot_items, receivable_list, expect_return_items_at)
 
+	is_multi_process = frappe.db.get_value('Apparelo Process', dc_process,'is_multi_process')
+	if is_multi_process:
+		to_process = frappe.db.get_value('Multi Process', dc_process, 'to_process')
+		if to_process == 'Packing':
+			for item in lot_items:
+				receivable_list[item['item_code']] = item['planned_qty']
+	elif dc_process == 'Packing':
+		for item in lot_items:
+			receivable_list[item['item_code']] = item['planned_qty']
+
 	percentage_in_excess = frappe.db.get_value(
 		'Lot Creation', lot, 'percentage')
 	if percentage_in_excess:
@@ -436,7 +487,7 @@ def get_expected_items_in_return(doc, items_to_be_sent=None, use_delivery_qty=Fa
 		else:
 			receivable_list[item] = receivable_list[item] + (receivable_list[item] * percentage_in_excess)
 
-		item_to_be_received['raw_materials'] = frappe.get_list('BOM Item', filters={'parent': item_to_be_received['bom']}, fields=['item_code', 'uom', 'qty', f'{receivable_list[item]} as req', 'conversion_factor'])
+		item_to_be_received['raw_materials'] = frappe.get_list('BOM Item', filters={'parent': item_to_be_received['bom']}, fields=['item_code', 'uom', 'qty', f'"{receivable_list[item]}" as req', 'conversion_factor'])
 
 	# Stock validation starts
 	if not items_to_be_sent:
@@ -474,9 +525,9 @@ def get_expected_items_in_return(doc, items_to_be_sent=None, use_delivery_qty=Fa
 		for stock_item_consumable_index in in_stock_item_consumable_indexes:
 			for i, rm in enumerate(items_to_be_received[stock_item_consumable_index]['raw_materials']):
 				if use_delivery_qty:
-					supply_qty = (rm['req'] * in_stock_item['quantity'])/total
+					supply_qty = (flt(rm['req']) * in_stock_item['quantity'])/total
 				else:
-					supply_qty = (rm['req'] * in_stock_item['available_quantity'])/total
+					supply_qty = (flt(rm['req']) * in_stock_item['available_quantity'])/total
 
 				if frappe.db.get_value('UOM', rm['uom'], 'must_be_whole_number'):
 					supply_qty = int(math.floor(supply_qty))
@@ -703,11 +754,13 @@ def delete_unavailable_delivery_items(doc):
 def delete_unavailable_return_items(doc):
 	available_return_items = []
 	if isinstance(doc, string_types):
-    		doc = frappe._dict(json.loads(doc))
+		doc = frappe._dict(json.loads(doc))
 	for item in doc.get('return_materials'):
 		item_dict={}
 		if item['qty']!=0:
-			item_dict = {"pf_item_code":item['pf_item_code'],"item_code":item['item_code'],"bom":item['bom'],"qty":item['qty'],"projected_qty":item['projected_qty'],"uom":item['uom'],"secondary_qty":item['secondary_qty'],"secondary_uom":item['secondary_uom']}
+			item_dict = {"pf_item_code":item['pf_item_code'],"item_code":item['item_code'],"bom":item['bom'],"qty":item['qty'],"projected_qty":item['projected_qty'],"uom":item['uom'],"secondary_qty":item['secondary_qty']}
+			if 'secondary_uom' in item:
+				item_dict["secondary_uom"] = item['secondary_uom']
 			if 'additional_parameters' in item:
 				item_dict["additional_parameters"] = item['additional_parameters']
 		if item_dict:
@@ -748,3 +801,93 @@ def make_entry(doc):
 					item_dict["additional_parameters"] = item['additional_parameters']
 				return_items_after_entry.append(item_dict)
 	return return_items_after_entry
+
+@frappe.whitelist()
+def make_grn(source_name, target_doc=None):
+	doc = get_mapped_doc("DC", source_name,	{
+		"DC": {
+			"doctype": "GRN",
+			"field_map": {
+				"supplier": "supplier",
+				"lot": "lot",
+				"expect_return_items_at": "location",
+				"name": "against_document",
+				"doctype": "against_type",
+				"return_materials": "return_materials"
+			}
+			}
+		}, target_doc)
+	return doc
+
+@frappe.whitelist()
+def divide_total_quantity(doc):
+	dc_item = []
+	total_qty = 0
+	matching_item_list = []
+	if isinstance(doc, string_types):
+		doc = frappe._dict(json.loads(doc))
+	attribute = doc.get('attribute')
+	attribute_value = doc.get('attribute_value')
+	total_delivered_qty = doc.get('total_quantity_delivered')
+	if total_delivered_qty:
+		for row in doc['items']:
+			item_doc = frappe.get_doc("Item",row['item_code'])
+			attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes,[item_doc])))
+			if attribute in attribute_set:
+				if attribute_set[attribute][0] == attribute_value:
+					total_qty += row['available_quantity']
+					matching_item_list.append(row['item_code'])
+		for row in doc['items']:
+			if row['item_code'] in matching_item_list:
+				if total_delivered_qty>total_qty:
+					remaining_qty = total_delivered_qty - total_qty
+					row['quantity'] = row['available_quantity'] + (remaining_qty/total_qty)*row['available_quantity']
+				else:
+					row['quantity'] = (total_delivered_qty/total_qty)*row['available_quantity']
+				dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']})
+			else:
+				if 'quantity' in row:
+					dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']})
+				else:
+					dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom']})
+	return dc_item
+
+@frappe.whitelist()
+def distribute_item_quantity(doc):
+	dc_item = []
+	if isinstance(doc, string_types):
+		doc = frappe._dict(json.loads(doc))
+	quantity = doc.get('quantity')
+	if quantity:
+		combination_list = []
+		combination_list.append([doc.get('size_1')])
+		combination_list.append([row['colors'] for row in doc.get('colours')])
+		combination_list.append([row['parts'] for row in doc.get('parts')])
+		combination_list = list(itertools.product(*combination_list))
+		for row in doc['items']:
+			item_doc = frappe.get_doc("Item",row['item_code'])
+			attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes,[item_doc]))) 
+			if not('Apparelo Size' in attribute_set and 'Apparelo Colour' in attribute_set \
+				and 'Part' in attribute_set):
+				dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']})
+			else:
+				if (attribute_set['Apparelo Size'][0], attribute_set['Apparelo Colour'][0], attribute_set['Part'][0]) in combination_list:
+					dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']+quantity})
+				else:
+					dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']})
+	return dc_item
+
+@frappe.whitelist()
+def distribute_qty(doc):
+	dc_item = []
+	if isinstance(doc, string_types):
+		doc = frappe._dict(json.loads(doc))
+	qty = doc.get('qty')
+	selected_item = doc.get('additional_item')
+	if qty:
+		for row in doc['items']:
+			if row['item_code'] == selected_item:
+				dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":qty})
+			else:
+				dc_item.append({"item_code":row['item_code'],"primary_uom":row['primary_uom'],"available_quantity":row['available_quantity'],"pf_item_code":row['pf_item_code'],"secondary_uom":row['secondary_uom'],"quantity":row['quantity']})
+	return dc_item

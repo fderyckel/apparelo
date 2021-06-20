@@ -175,7 +175,7 @@ def get_part_size_combination(doc):
 	for size in doc.get('sizes'):
 		for part in doc.get('parts'):
 			part_size_combination.append({'part':part['parts'],'size':size['size']})
-	return part_size_combination
+	return map(dict, sorted(set(tuple(value.items()) for value in part_size_combination)))
 
 
 @frappe.whitelist()
@@ -200,7 +200,7 @@ def get_part_colour_combination(doc):
 			for part in doc.get('colour_parts'):
 				for style in doc.get('styles'):
 					part_colour_combination.append({'part':part['parts'],'colour':colour['colors'],'style':style['styles']})
-	return(part_colour_combination)
+	return map(dict, sorted(set(tuple(value.items()) for value in part_colour_combination)))
 
 def create_common_bom(self, variant,attr, input_items, process_record, idx):
 	dia_weight,count=self.get_matching_details(attr["Part"], attr["Apparelo Size"])
@@ -231,7 +231,9 @@ def create_common_bom(self, variant,attr, input_items, process_record, idx):
 					return bom.name
 				else:
 					return existing_bom
-	frappe.throw(_(f'Colour {attr["Apparelo Colour"][0]} or Dia {attr["Dia"]} entered in cutting process record {process_record} at row {idx} was not found in the input item list'))
+	dia = attr["Dia"]
+	apparelo_colour = attr["Apparelo Colour"][0]
+	frappe.throw(_(f'Colour {apparelo_colour} or Dia {dia} entered in cutting process record {process_record} at row {idx} was not found in the input item list'))
 
 def is_combined_parts(item):
 	item_doc=frappe.get_doc("Item",item)

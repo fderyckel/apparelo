@@ -75,7 +75,8 @@ class Stitching(Document):
 										frappe.throw(_("Item colour is not available"))
 						variant_attribute_set['Apparelo Size'] = attribute_set["Apparelo Size"]
 					else:
-						frappe.throw(_("Part Colour is not available in the input"))
+						apparelo_colour = attribute_set["Apparelo Colour"]
+						frappe.throw(_(f"Part Colour {colour_mapping.part_colour} is not available in the input item colours {apparelo_colour}"))
 		if self.enable_set_item:
 			variant_attribute_set['Part'] = [self.part]
 		if final_process=="Stitching":

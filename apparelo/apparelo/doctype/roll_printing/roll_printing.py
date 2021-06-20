@@ -10,7 +10,7 @@ from apparelo.apparelo.utils.utils import is_similar_bom
 from erpnext import get_default_company, get_default_currency
 from erpnext.controllers.item_variant import generate_keyed_value_combinations, get_variant
 from apparelo.apparelo.utils.item_utils import get_attr_dict, get_item_attribute_set, create_variants
-import hashlib
+from apparelo.apparelo.common_scripts import customize_pf_item_code
 
 class RollPrinting(Document):
 	def on_submit(self):
@@ -21,30 +21,18 @@ class RollPrinting(Document):
 		input_items = []
 		for input_item_name in input_item_names:
 			input_items.append(frappe.get_doc('Item', input_item_name))
-		attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes,input_items)))
-		attribute_set.update(self.get_variant_values())
-		variants = create_variants('Roll Printed cloth', attribute_set)
-		for variant in variants:
-			variant_doc=frappe.get_doc("Item",variant)
+		for item in input_items:
+			attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes,[item])))
+			attribute_set.update(self.get_variant_values())
+			variant = create_variants('Roll Printed Cloth', attribute_set)
+			variant_doc=frappe.get_doc("Item",variant[0])
 			variant_attr = get_attr_dict(variant_doc.attributes)
-			for dia in attribute_set["Dia"]:
-				if dia in variant_attr['Dia']:
-					if not dia+" Dia" in variant:
-						hash_=hashlib.sha256(variant.replace('Roll Printed cloth',"").encode()).hexdigest()
-						new_variant=variant.replace(dia,dia+" Dia")
-						doc=frappe.get_doc("Item",variant)
-						doc.print_code=new_variant
-						doc.save()
-						new_variant=new_variant+" "+hash_[0:7]
-						r_variant=frappe.rename_doc("Item",variant,new_variant)
-						new_variants.append(r_variant)
-					else:
-						new_variants.append(variant)
+			new_variants.append(customize_pf_item_code('Roll Printed Cloth', attribute_set, variant_attr, variant[0]))
 		if len(new_variants)==0:
 			new_variants=variants
 		return new_variants
 
-	def create_boms(self, input_item_names, variants, colour, attribute_set=None, item_size=None, piece_count=None, final_item=None, final_process=None):
+	def create_boms(self, input_item_names, variants, colour, attribute_set=None, item_size=None, piece_count=None, final_item=None, final_process=None, dye_bleach_colours=[]):
 		input_items = []
 		for input_item_name in input_item_names:
 			input_items.append(frappe.get_doc('Item', input_item_name))

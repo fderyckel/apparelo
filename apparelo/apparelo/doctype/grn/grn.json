@@ -28,6 +28,13 @@
   "section_break_11",
   "return_materials",
   "delete_unavailable_return_items",
+  "address_and_contact_section",
+  "supplier_address_name",
+  "supplier_address",
+  "column_break_26",
+  "company",
+  "company_address_name",
+  "company_address",
   "section_break_22",
   "grn_cloth_quantity",
   "amended_from",
@@ -45,7 +52,6 @@
   {
    "fieldname": "lot",
    "fieldtype": "Link",
-   "in_list_view": 1,
    "label": "Lot",
    "options": "Lot Creation",
    "reqd": 1
@@ -99,6 +105,7 @@
   {
    "fieldname": "location",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Location",
    "options": "Location",
    "reqd": 1
@@ -184,11 +191,52 @@
    "fieldname": "delete_unavailable_return_items",
    "fieldtype": "Button",
    "label": "Delete Unavailable Return Items"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "address_and_contact_section",
+   "fieldtype": "Section Break",
+   "label": "Address and Contact"
+  },
+  {
+   "fieldname": "supplier_address_name",
+   "fieldtype": "Link",
+   "label": "Supplier Address Name",
+   "options": "Address"
+  },
+  {
+   "fieldname": "supplier_address",
+   "fieldtype": "Small Text",
+   "label": "Supplier Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_26",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "company_address_name",
+   "fieldtype": "Link",
+   "label": "Company Address Name",
+   "options": "Address"
+  },
+  {
+   "fieldname": "company_address",
+   "fieldtype": "Small Text",
+   "label": "Company Address",
+   "read_only": 1
   }
  ],
+ "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2020-07-16 21:40:42.600003",
+ "modified": "2021-02-24 07:47:29.514587",
  "modified_by": "Administrator",
  "module": "Apparelo",
  "name": "GRN",

@@ -17,14 +17,14 @@ from apparelo.apparelo.doctype.dc.dc import get_grouping_params
 class GRN(Document):
 	def validate(self):
 		self.set_po()
-		printable_list_received = generate_printable_list(self.return_materials, self.get_grouping_params(),field='received_qty')
+		printable_list_received = generate_printable_list(self.return_materials, self.get_grouping_params(), self.lot, field='received_qty')
 		printable_list_received[0]['section_title'] = 'Received Return Items'
 		generate_total_row_and_column(printable_list_received)
 
 		# Check for rejected quantity
 		rejected_qty_items = [item for item in self.return_materials if vars(item)['rejected_qty']!=0]
 		if rejected_qty_items:
-			printable_list_rejected = generate_printable_list(rejected_qty_items, self.get_grouping_params(),field='rejected_qty')
+			printable_list_rejected = generate_printable_list(rejected_qty_items, self.get_grouping_params(), self.lot, field='rejected_qty')
 			printable_list_rejected[0]['section_title'] = 'Rejected Return Items'
 			generate_total_row_and_column(printable_list_rejected)
 			printable_list_received+=printable_list_rejected
@@ -71,6 +71,26 @@ class GRN(Document):
 			process = frappe.db.get_value('DC',{'name': self.against_document},'process_1')
 			return get_grouping_params(process)
 
+@frappe.whitelist()
+def get_supplier_based_address(supplier):
+	address = frappe.db.sql(
+		'SELECT dl.parent '
+		'from `tabDynamic Link` dl join `tabAddress` ta on dl.parent=ta.name '
+		'where '
+		'dl.link_doctype=%s '
+		'and dl.link_name=%s '
+		'and dl.parenttype="Address" '
+		'and ifnull(ta.disabled, 0) = 0 and'
+		'(ta.address_type="Billing" or ta.is_primary_address=1) '
+		'order by ta.is_primary_address desc, ta.address_type desc limit 1',
+		("Supplier", supplier)
+	)
+	if address:
+		return address[0][0]
+	else:
+		return ''
+
+@frappe.whitelist()
 def get_type(doctype, txt, searchfield, start, page_len, filters):
 	if filters['type']=='DC':
 		DC = [[dc['name']] for dc in frappe.get_list("DC", filters={'supplier': ['in',filters['supplier']],'lot':['in',filters['lot']]}, fields=["name"])]
@@ -78,12 +98,16 @@ def get_type(doctype, txt, searchfield, start, page_len, filters):
 	else:
 		PO = [[po['name']] for po in frappe.get_list("Purchase Order", filters={'supplier': ['in',filters['supplier']],'lot':['in',filters['lot']]}, fields=["name"])]
 		return PO
+
+@frappe.whitelist()
 def get_Lot(doctype, txt, searchfield, start, page_len, filters):
 	lot_list = []
 	for lot in frappe.get_list("Purchase Order", fields=["lot"]):
 		if not lot['lot'] in lot_list:
 			lot_list.append([lot['lot']])
 	return lot_list
+
+@frappe.whitelist()
 def get_supplier(doctype, txt, searchfield, start, page_len, filters):
 	supplier_list = []
 	for supplier in frappe.get_list("Purchase Order", fields=["supplier"]):
@@ -194,10 +218,11 @@ def duplicate_values(doc):
 	for item in doc.get('return_materials'):
 		field_dict = {'Received Qty':'received_qty','Rejected Qty':'rejected_qty','Expected Qty':'qty'}
 		if doc.from_field in field_dict and doc.to_field in field_dict:
+			item_dict = {"pf_item_code":item['pf_item_code'],"item_code":item['item_code'],field_dict[doc.from_field]:item[field_dict[doc.from_field]],field_dict[doc.to_field]:item[field_dict[doc.from_field]],"qty":item['qty'],"uom":item['uom']}
 			if 'secondary_qty' in item:
-				item_dict = {"pf_item_code":item['pf_item_code'],"item_code":item['item_code'],field_dict[doc.from_field]:item[field_dict[doc.from_field]],field_dict[doc.to_field]:item[field_dict[doc.from_field]],"qty":item['qty'],"uom":item['uom'],"secondary_qty":item["secondary_qty"],"secondary_uom":item['secondary_uom']}
-			else:
-				item_dict = {"pf_item_code":item['pf_item_code'],"item_code":item['item_code'],field_dict[doc.from_field]:item[field_dict[doc.from_field]],field_dict[doc.to_field]:item[field_dict[doc.from_field]],"qty":item['qty'],"uom":item['uom'],"secondary_uom":item['secondary_uom']}	
+				item_dict["secondary_qty"] = item["secondary_qty"]
+			if 'secondary_uom' in item:
+				item_dict["secondary_uom"] = item['secondary_uom']
 		field_dict.pop(doc.from_field)
 		field_dict.pop(doc.to_field)
 		if list(field_dict.values())[0] in item:
@@ -209,7 +234,7 @@ def duplicate_values(doc):
 def delete_unavailable_return_items(doc):
 	available_return_items = []
 	if isinstance(doc, string_types):
-    		doc = frappe._dict(json.loads(doc))
+		doc = frappe._dict(json.loads(doc))
 	for item in doc.get('return_materials'):
 		item_dict={}
 		if 'received_qty' in item:

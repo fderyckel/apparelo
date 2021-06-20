@@ -40,5 +40,27 @@ frappe.ui.form.on('Item Production Detail', {
 				refresh_field('colour');
 			}
 		});
+  },
+  swap_all_indexes: function(frm) {
+	const set_fields = ['input_item','input_index','process_name','process_record','ipd_name','ipd_process_index','previous_process'];
+    frappe.call({
+			method: "apparelo.apparelo.doctype.item_production_detail.item_production_detail.swap_all_indexes",
+			freeze: true,
+			args: {doc: frm.doc},
+			callback: function(r) {
+				if(r.message) {
+					frm.set_value('processes', []);
+					$.each(r.message, function(i, d) {
+						var item = frm.add_child('processes');
+						for (let key in d) {
+							if (d[key] && in_list(set_fields, key)) {
+								item[key] = d[key];
+							}
+						}
+					});
+				}
+				refresh_field('processes');
+			}
+		});
   }
 });

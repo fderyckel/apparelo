@@ -24,7 +24,7 @@ class Checking(Document):
 			variants = create_variants(item+" Checked Cloth", attribute_set)
 		return variants
 
-	def create_boms(self, input_item_names, variants, colours, attribute_set=None, item_size=None, piece_count=None, final_item=None, final_process=None):
+	def create_boms(self, input_item_names, variants, colours, attribute_set=None, item_size=None, piece_count=None, final_item=None, final_process=None, dye_bleach_colours=[]):
 		
 		boms = []
 		for variant in variants:
@@ -39,7 +39,7 @@ class Checking(Document):
 						if size in input_attr["Apparelo Size"]  and size in variant_attr["Apparelo Size"]:
 							item_list.append({"item_code": input_item,"uom": "Nos"})
 					else:
-						for colour in colours:
+						for colour in dye_bleach_colours:
 							if size in input_attr["Apparelo Size"]  and size in variant_attr["Apparelo Size"] and colour in input_attr["Apparelo Colour"] and colour in variant_attr["Apparelo Colour"]:
 								item_list.append({"item_code": input_item,"uom": "Nos"})
 			existing_bom = frappe.db.get_value('BOM', {'item': variant}, 'name')

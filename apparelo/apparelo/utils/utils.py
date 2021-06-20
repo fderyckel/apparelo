@@ -10,6 +10,7 @@ from frappe import _
 import collections
 from frappe.utils import cint
 import copy
+from operator import itemgetter
 
 def is_similar_bom(bom1, bom2):
 	diff = get_bom_diff(bom1, bom2)
@@ -73,7 +74,7 @@ def get_bom_diff(bom1, bom2):
 	return out
 
 
-def generate_printable_list(items, grouping_params, field=None):
+def generate_printable_list(items, grouping_params, lot, field=None):
 	""" This function generates simple printable objects from items list with quantities
 	by applying the parameters provided.
 
@@ -103,21 +104,34 @@ def generate_printable_list(items, grouping_params, field=None):
 			item_list_with_attributes[single_item_attribute.item_code].update({single_item_attribute.attribute: single_item_attribute.attribute_value})
 			item_list_with_attributes[single_item_attribute.item_code]['attribute_list'].append(single_item_attribute.attribute)
 
+	ipd = frappe.db.get_value('Lot Creation', {'name': lot}, ['item_production_detail'])
+	ipd_doc = frappe.get_doc('Item Production Detail',ipd)
 	# generating the desired item format
 	item_dict_list = []
-	for item in items:
-		temp_item = {
-			"item_code": item.item_code,
-			"pf_item_code": item.pf_item_code,
-			"secondary_qty": item.secondary_qty,
-			"secondary_uom": item.secondary_uom
-		}
-		field_list = {'qty': item.qty if hasattr(item, 'qty') else '','received_qty': item.received_qty if hasattr(item, 'received_qty') else '','rejected_qty': item.rejected_qty if hasattr(item, 'rejected_qty') else '', 'quantity': item.quantity if hasattr(item, 'quantity') else ''}
-		temp_item['qty'] = field_list[field]
-		temp_item['uom'] = item.uom if hasattr(item, 'uom') else item.primary_uom
-		temp_item.update(item_list_with_attributes[item.item_code])
-		temp_item['attribute_list'].sort()
-		item_dict_list.append(temp_item)
+	for row in ipd_doc.size:
+		for item in items:
+			temp_item = {
+				"item_code": item.item_code,
+				"pf_item_code": item.pf_item_code,
+				"secondary_qty": item.secondary_qty,
+				"secondary_uom": item.secondary_uom
+			}
+			field_list = {'qty': item.qty if hasattr(item, 'qty') else '','received_qty': item.received_qty if hasattr(item, 'received_qty') else '','rejected_qty': item.rejected_qty if hasattr(item, 'rejected_qty') else '', 'quantity': item.quantity if hasattr(item, 'quantity') else ''}
+			temp_item['qty'] = field_list[field]
+			temp_item['uom'] = item.uom if hasattr(item, 'uom') else item.primary_uom
+			temp_item.update(item_list_with_attributes[item.item_code])
+			temp_item['attribute_list'].sort()
+			if not temp_item in item_dict_list:
+				if 'Apparelo Size' in temp_item:
+					if temp_item['Apparelo Size'] == row.size:
+						item_dict_list.append(temp_item)
+				else:
+					item_dict_list.append(temp_item)
+		if item_dict_list:
+			if 'Dia' in item_dict_list[0]:
+				item_dict_list = sorted(item_dict_list, key=itemgetter('Dia'))
+			if 'Part' in item_dict_list[0]:
+				item_dict_list = sorted(item_dict_list, key=lambda k: ("Part" not in k, k.get("Part", None)))
 
 	# generating the printable list
 	final_printable_list = []

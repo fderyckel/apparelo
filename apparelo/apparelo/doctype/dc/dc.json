@@ -12,6 +12,7 @@
   "supplier",
   "location",
   "expect_return_items_at",
+  "entry_table",
   "get_items",
   "helper_section",
   "select_helper",
@@ -19,6 +20,23 @@
   "from_field",
   "to_field",
   "copy_over",
+  "section_break_15",
+  "attribute",
+  "total_quantity_delivered",
+  "divide_total_quantity",
+  "column_break_19",
+  "attribute_value",
+  "distribute_item_quantity_section",
+  "parts",
+  "colours",
+  "column_break_24",
+  "size_1",
+  "quantity",
+  "distribute_item_quantity",
+  "distribute_additional_item_quantity_section",
+  "additional_item",
+  "qty",
+  "distribute_qty",
   "section_break_13",
   "items",
   "delete_unavailable_delivery_items",
@@ -40,7 +58,7 @@
   "company",
   "company_address_name",
   "company_address",
-  "section_break_15",
+  "section_break_42",
   "dc_cloth_quantity",
   "amended_from"
  ],
@@ -63,7 +81,8 @@
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Delivery Items",
-   "options": "DC Item"
+   "options": "DC Item",
+   "read_only_depends_on": "eval: doc.entry_table == 'Return Materials'"
   },
   {
    "fieldname": "get_items",
@@ -94,7 +113,8 @@
    "fieldname": "return_materials",
    "fieldtype": "Table",
    "label": "Items Expected in Return",
-   "options": "Return Materials"
+   "options": "Return Materials",
+   "read_only_depends_on": "eval: doc.entry_table == 'Delivery Items'"
   },
   {
    "fieldname": "amended_from",
@@ -108,6 +128,7 @@
   {
    "fieldname": "location",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Delivery Location",
    "options": "Location",
    "reqd": 1
@@ -142,6 +163,7 @@
    "label": "Printable Section"
   },
   {
+   "depends_on": "eval:doc.select_helper=='Divide Total Quantity' && doc.docstatus == 0",
    "fieldname": "section_break_15",
    "fieldtype": "Section Break"
   },
@@ -259,11 +281,108 @@
    "fieldname": "make_entry",
    "fieldtype": "Button",
    "label": "Make Entry"
+  },
+  {
+   "fieldname": "entry_table",
+   "fieldtype": "Select",
+   "label": "Entry Table",
+   "options": "\nDelivery Items\nReturn Materials",
+   "reqd": 1
+  },
+  {
+   "fieldname": "attribute",
+   "fieldtype": "Link",
+   "label": "Attribute",
+   "options": "Item Attribute"
+  },
+  {
+   "fieldname": "divide_total_quantity",
+   "fieldtype": "Button",
+   "label": "Divide Total Quantity"
+  },
+  {
+   "fieldname": "column_break_19",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "attribute_value",
+   "fieldtype": "Select",
+   "label": "Attribute Value"
+  },
+  {
+   "fieldname": "section_break_42",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "total_quantity_delivered",
+   "fieldtype": "Float",
+   "label": "Total Quantity Delivered"
+  },
+  {
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "column_break_24",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "parts",
+   "fieldtype": "Table MultiSelect",
+   "label": "Parts",
+   "options": "Cutting Part"
+  },
+  {
+   "fieldname": "colours",
+   "fieldtype": "Table MultiSelect",
+   "label": "Colours",
+   "options": "Cutting Colors"
+  },
+  {
+   "fieldname": "size_1",
+   "fieldtype": "Link",
+   "label": "Size",
+   "options": "Apparelo Size"
+  },
+  {
+   "depends_on": "eval:doc.select_helper=='Distribute Additional Item Quantity' && doc.docstatus == 0",
+   "fieldname": "distribute_additional_item_quantity_section",
+   "fieldtype": "Section Break",
+   "label": "Distribute Additional Item Quantity"
+  },
+  {
+   "fieldname": "additional_item",
+   "fieldtype": "Link",
+   "label": "Additional Item",
+   "options": "Item"
+  },
+  {
+   "fieldname": "qty",
+   "fieldtype": "Float",
+   "label": "Qty"
+  },
+  {
+   "depends_on": "eval:doc.select_helper=='Distribute Item Quantity' && doc.docstatus == 0",
+   "fieldname": "distribute_item_quantity_section",
+   "fieldtype": "Section Break",
+   "label": "Distribute Item Quantity"
+  },
+  {
+   "fieldname": "distribute_item_quantity",
+   "fieldtype": "Button",
+   "label": "Distribute Item Quantity"
+  },
+  {
+   "fieldname": "distribute_qty",
+   "fieldtype": "Button",
+   "label": "Distribute Qty"
   }
  ],
+ "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2020-07-16 21:43:30.707906",
+ "modified": "2021-02-27 07:27:27.081403",
  "modified_by": "Administrator",
  "module": "Apparelo",
  "name": "DC",

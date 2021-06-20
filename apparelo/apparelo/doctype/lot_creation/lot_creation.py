@@ -19,6 +19,14 @@ from numpy import prod
 
 
 class LotCreation(Document):
+	def on_update_after_submit(self):
+		po_items = self.po_items
+		last_ipd_items = get_ipd_item(self.__dict__)
+		for row in po_items:
+			frappe.db.set_value('Lot Creation Plan Item',{'parent':self.name, 'item_code':row.item_code},'item_code',last_ipd_items[row.idx-1]['item_code'])
+			frappe.db.set_value('Lot Creation Plan Item',{'parent':self.name, 'bom_no': row.bom_no},'bom_no',last_ipd_items[row.idx-1]['bom_no'])
+		self.reload()
+
 	def on_submit(self):
 		create_parent_warehouse(self)
 		create_warehouse(self)
@@ -212,7 +220,6 @@ def cloth_qty(doc):
 		if ipd_process.process_name == 'Knitting':
 			knit_idx.append(str(ipd_process.idx))
 			dia_list = []
-			knitted_colour = []
 			for knitting_dia in frappe.get_doc('Knitting',ipd_process.process_record).dia:
 				dia_list.append(knitting_dia.dia)
 			process_name =  frappe.get_list("Item Production Detail Process", filters={'parent': ['in',doc.item_production_detail],'input_index':ipd_process.idx}, fields=['process_name','process_record'])
@@ -221,14 +228,15 @@ def cloth_qty(doc):
 				if process_name:
 					knit_idx = []
 			if process_name:
-				if process_name[0]['process_name'] == 'Bleaching':
-					table = frappe.get_doc(process_name[0]['process_name'],process_name[0]['process_record']).types
-				else:
-					table = frappe.get_doc(process_name[0]['process_name'],process_name[0]['process_record']).colours
-			for colth_colour in table:
-				knitted_colour.append(colth_colour.colour)
-				colour_list.add(colth_colour.colour)
-			yarn_list.append({'yarn': ipd_process.input_item, 'index': ipd_process.idx, 'dia': dia_list})
+				table = frappe.get_doc(process_name[0]['process_name'],process_name[0]['process_record']).colour_shade_mapping
+			for row in table:
+				colour_list.add(row.colour)
+			ipd_item_mapping_doc = frappe.get_doc('IPD Item Mapping',{'item_production_details':doc.item_production_detail})
+			out_item_list = []
+			for row in ipd_item_mapping_doc.item_mapping:
+				if str(ipd_process.idx) in row.input_index:
+					out_item_list.append(row.item)
+			yarn_list.append({'yarn': ipd_process.input_item, 'dia': dia_list, 'out_items': out_item_list})
 		elif ipd_process.process_name == 'Compacting' or ipd_process.process_name == 'Steaming':
 			process.append(ipd_process.process_name)
 	process = list(set(process))
@@ -262,16 +270,6 @@ def cloth_qty(doc):
 	for data in yarn_list:
 		html_body = ''
 		dia_qty_list =[]
-		combined_input_idx.append(str(data['index']))
-		ipd_item_mapping_name = frappe.db.get_value('IPD Item Mapping',{'item_production_details':doc.item_production_detail},'name')
-		ipd_items = frappe.get_list("Item Mapping", filters={'parent': ['in',ipd_item_mapping_name],'input_index':data['index']}, fields='item')
-		if not ipd_items:
-			ipd_items = frappe.get_list("Item Mapping", filters={'parent': ['in',ipd_item_mapping_name],'input_index':','.join(combined_input_idx)}, fields='item')
-			if ipd_items:
-				combined_input_idx = []
-		ipd_item_list = []
-		for item in ipd_items:
-			ipd_item_list.append(item['item'])
 		for dia in data['dia']:
 			dia_list = [0]*(len(colour_list)+2)
 			dia_list[0] = dia
@@ -280,18 +278,21 @@ def cloth_qty(doc):
 				for item in final_item_list:
 					item_doc = frappe.get_doc("Item",item['item_code'])
 					item_attr = get_attr_dict(item_doc.attributes)
-					if (colour==item_attr['Apparelo Colour'][0]) and (dia==item_attr['Dia'][0]) and (item['item_code'] in ipd_item_list):
-						if input_qty < colour_count and item['qty']:
-							combination_count = find_combination(colour_count, input_qty)
-							qty = round(item['qty']/combination_count,3)
-							dia_list[colour_list.index(colour)+1] = qty
-							dia_total += qty
-						else:
-							dia_list[colour_list.index(colour)+1] = item['qty']
-							dia_total += item['qty']
-						if 'FOLD' in item['item_code']:
-							dia_list[0] = f'{dia} (FOLD)'
-						break
+					bom = frappe.db.get_value('BOM',{'item':item['item_code']},'name')
+					is_yarn_exist = frappe.db.get_value('BOM Explosion Item',{'parent':bom,'item_code':data['yarn']})
+					if is_yarn_exist:
+						if (colour==item_attr['Apparelo Colour'][0]) and (dia==item_attr['Dia'][0]) and (item['item_code'] in data['out_items']):
+							if input_qty < colour_count and item['qty']:
+								combination_count = find_combination(colour_count, input_qty)
+								qty = round(item['qty']/combination_count,3)
+								dia_list[colour_list.index(colour)+1] = qty
+								dia_total += qty
+							else:
+								dia_list[colour_list.index(colour)+1] = item['qty']
+								dia_total += item['qty']
+							if 'FOLD' in item['item_code']:
+								dia_list[0] = f'{dia} (FOLD)'
+							break
 			dia_list[len(colour_list)+1] = round(dia_total,3)
 			dia_qty_list.append(dia_list)
 		for lists in dia_qty_list:

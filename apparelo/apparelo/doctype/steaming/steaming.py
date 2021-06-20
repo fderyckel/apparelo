@@ -19,19 +19,21 @@ class Steaming(Document):
 	def create_variants(self, input_item_names):
 		new_variants=[]
 		input_items = []
+		apparelo_colours = []
 		for input_item_name in input_item_names:
 			input_items.append(frappe.get_doc('Item', input_item_name))
-		attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes, input_items)))
-		variants = create_variants('Steamed Cloth', attribute_set)
-		for variant in variants:
-			variant_doc=frappe.get_doc("Item",variant)
+		for item in input_items:
+			attribute_set = get_item_attribute_set(list(map(lambda x: x.attributes,[item])))
+			apparelo_colours.extend(attribute_set['Apparelo Colour'])
+			variant = create_variants('Steamed Cloth', attribute_set)
+			variant_doc=frappe.get_doc("Item",variant[0])
 			variant_attr = get_attr_dict(variant_doc.attributes)
-			new_variants.append(customize_pf_item_code('Steamed Cloth', attribute_set, variant_attr, variant))
+			new_variants.append(customize_pf_item_code('Steamed Cloth', attribute_set, variant_attr, variant[0]))
 		if len(new_variants)==0:
 			new_variants=variants
-		return new_variants, attribute_set
+		return new_variants, set(apparelo_colours)
 
-	def create_boms(self, input_item_names, variants, attribute_set,item_size,colour,piece_count):
+	def create_boms(self, input_item_names, variants, apparelo_colours,item_size,colour,piece_count):
 		input_items = []
 		for input_item_name in input_item_names:
 			input_items.append(frappe.get_doc('Item', input_item_name))
@@ -41,9 +43,11 @@ class Steaming(Document):
 			for variant in variants:
 				variant_doc=frappe.get_doc("Item",variant)
 				variant_attr = get_attr_dict(variant_doc.attributes)
-				for color in attribute_set['Apparelo Colour']:
+				for color in apparelo_colours:
 					for dia in self.dia_conversions:
-						if color in input_attr["Apparelo Colour"] and color in variant_attr["Apparelo Colour"] and dia.from_dia in input_attr["Dia"] and dia.from_dia in variant_attr["Dia"]:
+						if color in input_attr["Apparelo Colour"] and color in variant_attr["Apparelo Colour"] \
+							and dia.from_dia in input_attr["Dia"] and dia.from_dia in variant_attr["Dia"] \
+							and input_attr['Knitting Type'] == variant_attr['Knitting Type']:
 							bom_for_variant = frappe.get_doc({
 								"doctype": "BOM",
 								"currency": get_default_currency(),

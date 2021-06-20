@@ -26,6 +26,7 @@
  ],
  "fields": [
   {
+   "allow_on_submit": 1,
    "fieldname": "item_production_detail",
    "fieldtype": "Link",
    "in_filter": 1,
@@ -139,9 +140,10 @@
    "label": "Add New Location"
   }
  ],
+ "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2020-07-11 14:30:08.121216",
+ "modified": "2021-02-23 13:34:53.378839",
  "modified_by": "Administrator",
  "module": "Apparelo",
  "name": "Lot Creation",

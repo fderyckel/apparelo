@@ -2,6 +2,21 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('DC', {
+	refresh: function(frm) {
+		if (frm.doc.docstatus === 1 && frm.doc.return_materials) {
+			frm.add_custom_button(__("GRN"), ()=> {
+				frm.trigger("make_grn");
+			}, __('Create'));
+		}
+		frm.page.set_inner_btn_group_as_primary(__('Create'));
+	},
+	make_grn: function() {
+		frappe.model.open_mapped_doc({
+			method: "apparelo.apparelo.doctype.dc.dc.make_grn",
+			frm: cur_frm,
+			freeze_message: __("Creating GRN ...")
+		})
+	},
 	onload: function(frm) {
 		frm.set_value("company",frappe.defaults.get_default("company"));
 		frappe.db.get_list("Address",{filters:{is_shipping_address: 1}}).then(data => {
@@ -9,7 +24,7 @@ frappe.ui.form.on('DC', {
 				frm.set_value("company_address_name",data[0].name);
 			}
 		})
-		frm.set_df_property("select_helper","options",['','Copy Over'].join('\n'))
+		frm.set_df_property("select_helper","options",['','Copy Over', 'Divide Total Quantity', 'Distribute Item Quantity', 'Distribute Additional Item Quantity'].join('\n'))
 		frm.set_df_property("from_field","options",['Available Qty','Delivery Qty','Secondary Qty'].join('\n'))
 		frm.set_df_property("to_field","options",['Available Qty','Delivery Qty','Secondary Qty'].join('\n'))
 		frm.set_query("supplier", function() {
@@ -36,6 +51,13 @@ frappe.ui.form.on('DC', {
 				}
 			}
 		});
+		frm.set_query("additional_item", function() {
+			return {
+				filters: {
+					"item_group":"Raw Material"
+				}
+			};
+		});
 	},
 	copy_over:function(frm){
 		const set_fields = ['deliver_later','pf_item_code','item_code','available_quantity','quantity','primary_uom','secondary_qty','secondary_uom','delivery_location'];
@@ -58,6 +80,19 @@ frappe.ui.form.on('DC', {
 				refresh_field('items');
 			}
 		});
+	},
+	attribute: function(frm)
+	{
+		frappe.call({
+			method: "apparelo.apparelo.doctype.grn.grn.get_attribute_value",
+			freeze: true,
+			args: {attribute: frm.doc.attribute},
+			callback: function(r) {
+			  if(r.message) {
+				frm.set_df_property("attribute_value","options",r.message);
+			  }
+			}
+		  });
 	},
 	make_entry:function(frm){
 		const set_fields = ['item_code', 'uom', 'qty', 'projected_qty', 'secondary_uom', 'additional_parameters', 'pf_item_code', 'bom'];
@@ -150,6 +185,72 @@ frappe.ui.form.on('DC', {
 				refresh_field('return_materials');
 			}
 		});
+	},
+	divide_total_quantity: function(frm){
+		const set_fields = ['item_code','primary_uom','quantity','available_quantity','pf_item_code',"secondary_uom"];
+		frappe.call({
+			method: "apparelo.apparelo.doctype.dc.dc.divide_total_quantity",
+			freeze: true,
+			args: {doc: frm.doc},
+			callback: function(r) {
+				if(r.message) {
+					frm.set_value('items', []);
+					$.each(r.message, function(i, d) {
+						var item = frm.add_child('items');
+						for (let key in d) {
+							if (d[key] && in_list(set_fields, key)) {
+								item[key] = d[key];
+							}
+						}
+					});
+				}
+				refresh_field('items');
+			}
+		});	
+	},
+	distribute_qty: function(frm){
+		const set_fields = ['item_code','primary_uom','quantity','available_quantity','pf_item_code',"secondary_uom"];
+		frappe.call({
+			method: "apparelo.apparelo.doctype.dc.dc.distribute_qty",
+			freeze: true,
+			args: {doc: frm.doc},
+			callback: function(r) {
+				if(r.message) {
+					frm.set_value('items', []);
+					$.each(r.message, function(i, d) {
+						var item = frm.add_child('items');
+						for (let key in d) {
+							if (d[key] && in_list(set_fields, key)) {
+								item[key] = d[key];
+							}
+						}
+					});
+				}
+				refresh_field('items');
+			}
+		});	
+	},
+	distribute_item_quantity: function(frm){
+		const set_fields = ['item_code','primary_uom','quantity','available_quantity','pf_item_code',"secondary_uom"];
+		frappe.call({
+			method: "apparelo.apparelo.doctype.dc.dc.distribute_item_quantity",
+			freeze: true,
+			args: {doc: frm.doc},
+			callback: function(r) {
+				if(r.message) {
+					frm.set_value('items', []);
+					$.each(r.message, function(i, d) {
+						var item = frm.add_child('items');
+						for (let key in d) {
+							if (d[key] && in_list(set_fields, key)) {
+								item[key] = d[key];
+							}
+						}
+					});
+				}
+				refresh_field('items');
+			}
+		});	
 	},
 	get_return_item: function(frm) {
 		const set_fields = ['item_code', 'uom', 'qty', 'projected_qty', 'secondary_uom', 'additional_parameters', 'pf_item_code', 'bom'];
